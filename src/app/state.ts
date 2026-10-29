@@ -10,7 +10,7 @@ export type Screen =
   | '03-otp'
   | '04-scan-cards'
   | '05-checking'
-  | '05b-face' // NEW: live face match with the Aadhaar photo
+  | '05b-fingerprint' // NEW: fingerprint match with the Aadhaar biometrics
   | '06-confirm-details'
   | '06m-child' // NEW: minor accounts only — the child's details and document
   | '07-more-details'
@@ -28,7 +28,17 @@ export type Screen =
   | 'E5-session-cleared'
   | 'E6-help-coming'
   | 'E7-return-pass' // NEW: printed QR slip to come back with a missing document
-  | 'E9-resume'; // NEW: scan the slip (or type its code) to continue
+  | 'E9-resume' // NEW: scan the slip (or type its code) to continue
+  // NEW: existing customers, signed in with their fingerprint on the home screen
+  | 'C1-banking'
+  | 'C2-deposit'
+  | 'C3-withdraw'
+  | 'C4-credit-card'
+  | 'C5-statement'
+  | 'C6-cheque-book'
+  | 'C9-signed-out';
+
+export const isBankingScreen = (s: Screen) => s.startsWith('C');
 
 export type AccountType = 'savings' | 'current' | 'minor';
 export const ACCOUNT_TYPES: AccountType[] = ['savings', 'current', 'minor'];
@@ -65,6 +75,30 @@ export interface ChildData {
   docScanned: boolean;
 }
 
+export interface Txn {
+  /** Epoch ms. */
+  at: number;
+  kind: 'credit' | 'debit';
+  amount: number;
+  note: string;
+}
+
+/** An existing account holder, as the bank server returns it after a fingerprint match. */
+export interface Customer {
+  id: string;
+  name: string;
+  accountType: AccountType;
+  accountNumber: string;
+  ifsc: string;
+  mobile: string;
+  aadhaarLast4: string;
+  balance: number;
+  /** Newest first. */
+  txns: Txn[];
+  creditCard?: { card: string; limit: number; ref: string };
+  chequeBook?: { leaves: number; ref: string };
+}
+
 export interface UserData {
   accountType: AccountType;
   /** The visitor picked an account on the home screen (it stays selected when they come back). */
@@ -72,7 +106,7 @@ export interface UserData {
   docs: Partial<Record<Doc, DocStatus>>;
   aadhaarNumber: string;
   verifiedVia?: 'otp' | 'fingerprint';
-  faceVerified: boolean;
+  fingerprintVerified: boolean;
   /** Filled only after Aadhaar eKYC + PAN check (step 05). Never pre-filled. For a minor account this is the guardian. */
   fullName: string;
   dob: string;
@@ -83,7 +117,6 @@ export interface UserData {
   panNumber: string;
   child: ChildData;
   nomineeName: string;
-  nomineeRelation: string;
   /** ISO date, YYYY-MM-DD. */
   nomineeDob: string;
   occupation: string;
@@ -98,6 +131,8 @@ export interface UserData {
   accountNumber: string;
   ifsc: string;
   resumeCode?: string;
+  /** Set only while an existing customer is signed in. */
+  customer: Customer | null;
 }
 
 /** EMPTY visitor data. The original kiosk reset to pre-filled demo data, which leaked to the next visitor. */
@@ -107,7 +142,7 @@ export function emptyUser(): UserData {
     typeChosen: false,
     docs: {},
     aadhaarNumber: '',
-    faceVerified: false,
+    fingerprintVerified: false,
     fullName: '',
     dob: '',
     gender: '',
@@ -117,7 +152,6 @@ export function emptyUser(): UserData {
     panNumber: '',
     child: { name: '', dob: '', gender: '', relation: '', docType: 'birth', docScanned: false },
     nomineeName: '',
-    nomineeRelation: '',
     nomineeDob: '',
     occupation: '',
     yearlyIncome: '',
@@ -130,6 +164,7 @@ export function emptyUser(): UserData {
     referenceNumber: '',
     accountNumber: '',
     ifsc: '',
+    customer: null,
   };
 }
 
@@ -160,7 +195,7 @@ export const isMinor = (u: { accountType: AccountType }) => u.accountType === 'm
 export const holderName = (u: UserData) => (isMinor(u) && u.child.name ? u.child.name : u.fullName);
 
 export const isVerified = (u: UserData) => !!u.fullName;
-export const hasPersonal = (u: UserData) => !!(u.fullName || u.aadhaarNumber || u.signatureDataUrl || u.nomineeName || u.panNumber || u.deposit || u.child.name);
+export const hasPersonal = (u: UserData) => !!(u.customer || u.fullName || u.aadhaarNumber || u.signatureDataUrl || u.nomineeName || u.panNumber || u.deposit || u.child.name);
 /** Anything worth keeping when the visitor goes back to the home screen. */
 export const hasProgress = (u: UserData) => hasPersonal(u) || Object.keys(u.docs).length > 0;
 
@@ -190,7 +225,7 @@ export const IDLE_LIMIT: Record<Screen, number | null> = {
   '03-otp': 45,
   '04-scan-cards': 60,
   '05-checking': 90,
-  '05b-face': 60,
+  '05b-fingerprint': 60,
   '06-confirm-details': 30,
   '06m-child': 60,
   '07-more-details': 45,
@@ -209,18 +244,27 @@ export const IDLE_LIMIT: Record<Screen, number | null> = {
   'E6-help-coming': 180,
   'E7-return-pass': null, // has its own visible auto-clear countdown
   'E9-resume': 60,
+  'C1-banking': 45,
+  'C2-deposit': 60,
+  'C3-withdraw': 45,
+  'C4-credit-card': 60,
+  'C5-statement': 45,
+  'C6-cheque-book': 45,
+  'C9-signed-out': null,
 };
 export const SHIELD_SECONDS = 30;
 export const PREWARN_SECONDS = 10;
 
 /** Header step (1–5) per screen, as in the original kiosk. */
 export function stepOf(s: Screen): { n: number; key: 'check' | 'verify' | 'details' | 'approval' | 'passbook' } {
-  if (['02-aadhaar', '03-otp', '04-scan-cards', '05-checking', '05b-face', '06-confirm-details', 'E2-otp-problem', 'E3-scanner-error'].includes(s)) return { n: 2, key: 'verify' };
+  if (['02-aadhaar', '03-otp', '04-scan-cards', '05-checking', '05b-fingerprint', '06-confirm-details', 'E2-otp-problem', 'E3-scanner-error'].includes(s)) return { n: 2, key: 'verify' };
   if (['06m-child', '07-more-details', '08-review-agree', '08a-deposit', '08b-services'].includes(s)) return { n: 3, key: 'details' };
   if (['09-signature', '10-bank-verifying'].includes(s)) return { n: 4, key: 'approval' };
   if (['11-account-ready', '12-print-passbook', '13-all-set', 'E5-session-cleared'].includes(s)) return { n: 5, key: 'passbook' };
   return { n: 1, key: 'check' };
 }
+
+export const txnId = () => String(Math.floor(1e11 + Math.random() * 9e11));
 
 export function makeAccountNumber() {
   const n = String(Math.floor(1e11 + Math.random() * 9e11));

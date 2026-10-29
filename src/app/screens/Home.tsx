@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { ArrowRight, Banknote, Check, CircleCheckBig, QrCode, ScanLine, Smartphone } from 'lucide-react';
+import { ArrowRight, Banknote, Check, CircleAlert, CircleCheckBig, FingerprintPattern, QrCode, ScanLine, Smartphone } from 'lucide-react';
 import { b } from '../../lib/sound';
+import { matchFingerprint } from '../../lib/api';
 import { useApp } from '../ctx';
-import { Footer, Modal, Page, btnPrimary } from '../ui';
+import { FingerprintSensor, Footer, Modal, Page, btnPrimary } from '../ui';
 import { ACCOUNT_TYPES, DEPOSIT, emptyUser, hasPersonal, rupees, type AccountType } from '../state';
 import savingsImg from '../../assets/acc-savings.png';
 import currentImg from '../../assets/acc-current.png';
@@ -85,6 +86,10 @@ export function AccountHome() {
         </Footer>
       }
     >
+      <ExistingCustomer />
+      <div className="flex items-center gap-4 text-xs font-bold uppercase tracking-wider text-slate-400">
+        <span className="h-px flex-1 bg-slate-200" /> {h.orNew} <span className="h-px flex-1 bg-slate-200" />
+      </div>
       <div className="text-center space-y-1">
         <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">{h.title}</h1>
         <p className="text-slate-500 font-medium text-sm md:text-base">{h.sub}</p>
@@ -156,5 +161,61 @@ export function AccountHome() {
         <span>{h.payHint}</span>
       </div>
     </Page>
+  );
+}
+
+/**
+ * NEW: existing customers open their account with a fingerprint, no card or passbook.
+ * Hidden behind a note while a new application is kept in progress, so one visitor's
+ * answers are never mixed with another person's account.
+ */
+function ExistingCustomer() {
+  const { t, user, signIn } = useApp();
+  const e = t.x.home.existing;
+  const [attempt, setAttempt] = useState(0);
+  const [notFound, setNotFound] = useState(false);
+  const busy = hasPersonal(user);
+
+  const matched = async () => {
+    const c = await matchFingerprint();
+    if (c) signIn(c);
+    else {
+      b.playError();
+      setNotFound(true);
+      setAttempt((n) => n + 1); // reset the reader for another try
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-3xl p-6 border-2 border-blue-200 shadow-xs grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+      <div className="md:col-span-8 space-y-3">
+        <div className="flex items-center gap-3">
+          <span className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-md shrink-0"><FingerprintPattern className="w-7 h-7" /></span>
+          <div>
+            <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">{e.title}</h2>
+            <p className="text-sm text-slate-500 font-medium">{e.sub}</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {e.services.map((s) => (
+            <span key={s} className="flex items-center gap-1.5 text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-full">
+              <Check className="w-3.5 h-3.5 stroke-[3]" /> {s}
+            </span>
+          ))}
+        </div>
+        {notFound && (
+          <div className="flex items-start gap-2 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+            <CircleAlert className="w-4 h-4 shrink-0" /> {e.notFound}
+          </div>
+        )}
+      </div>
+      <div className="md:col-span-4 text-center">
+        {busy ? (
+          <p className="text-sm font-semibold text-slate-500 bg-slate-50 border border-slate-200 rounded-2xl p-4">{e.busy}</p>
+        ) : (
+          <FingerprintSensor key={attempt} onMatched={() => void matched()} idleText={e.idle} scanningText={e.reading} matchedText={e.matched} />
+        )}
+      </div>
+    </div>
   );
 }

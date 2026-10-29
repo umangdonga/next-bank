@@ -27,7 +27,7 @@ import {
 import { b } from '../lib/sound';
 import { y, type Lang } from '../i18n';
 import { useApp } from './ctx';
-import { isMinor, stepOf, type Doc, type Screen } from './state';
+import { isBankingScreen, isMinor, stepOf, type Doc, type Screen } from './state';
 
 /* ----------------------------------------------------------------- header */
 
@@ -49,7 +49,7 @@ export function Header({
   const a = y[language];
   const { n, key } = stepOf(screen);
   const stage = minor && (key === 'verify' || key === 'details') ? a.x.minor.stages[key] : a.stepStages[key];
-  const showSteps = !['00-home', 'E6-help-coming', 'E5-session-cleared', 'E7-return-pass', 'E9-resume'].includes(screen);
+  const showSteps = !['00-home', 'E6-help-coming', 'E5-session-cleared', 'E7-return-pass', 'E9-resume'].includes(screen) && !isBankingScreen(screen);
   const langBtn = (l: Lang, label: string) => (
     <button
       onClick={() => {

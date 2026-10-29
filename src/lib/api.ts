@@ -6,6 +6,8 @@
  * same computer can still talk to the kiosk tab. Nothing is ever written to
  * localStorage or sessionStorage: a shared kiosk must not keep personal data.
  */
+import type { Customer } from '../app/state';
+import { demoCustomer } from './demoCustomer';
 
 export interface PhoneState {
   done?: boolean;
@@ -87,4 +89,31 @@ export async function phoneDelete(sid: string): Promise<void> {
 export async function lanBases(): Promise<string[]> {
   const r = await request<{ lan: string[] }>('/api/info');
   return r.ok && r.body ? r.body.lan : [];
+}
+
+/* ----------------------------------------------------- existing customers */
+
+const seedCustomer = demoCustomer();
+const memCustomers = new Map<string, Customer>([[seedCustomer.id, seedCustomer]]);
+let memLastEnrolled = seedCustomer.id;
+
+/** Send a fingerprint scan to the bank; returns the account it belongs to. */
+export async function matchFingerprint(): Promise<Customer | null> {
+  const r = await request<Customer>('/api/customers/match', { method: 'POST', body: '{}' });
+  if (r.ok && r.body) return r.body;
+  if (r.status === 404) return null;
+  return memCustomers.get(memLastEnrolled) ?? null;
+}
+
+/** Register an account opened at this kiosk, so the holder's fingerprint opens it next time. */
+export async function enrollCustomer(c: Customer): Promise<void> {
+  memCustomers.set(c.id, c);
+  memLastEnrolled = c.id;
+  await request('/api/customers', { method: 'POST', body: JSON.stringify(c) });
+}
+
+/** Save a deposit, withdrawal or request on the bank's side. */
+export async function saveCustomer(c: Customer): Promise<void> {
+  memCustomers.set(c.id, c);
+  await request(`/api/customers/${encodeURIComponent(c.id)}`, { method: 'PUT', body: JSON.stringify(c) });
 }

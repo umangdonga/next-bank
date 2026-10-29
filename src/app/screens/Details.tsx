@@ -61,9 +61,9 @@ export function ConfirmDetails() {
               <div className="absolute bottom-0 inset-x-0 bg-blue-600/90 text-white text-[10px] font-bold py-0.5 tracking-wider uppercase">UIDAI RECORD</div>
             </div>
             <div className="text-xs text-slate-500 font-medium">{a.photoSub}</div>
-            {user.faceVerified && (
+            {user.fingerprintVerified && (
               <div className="mt-2 flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-                <Check className="w-3.5 h-3.5 stroke-[3]" /> {t.x.face.success}
+                <Check className="w-3.5 h-3.5 stroke-[3]" /> {t.x.finger.success}
               </div>
             )}
             <div className="border-t border-slate-100 w-full mt-4 pt-3 text-xs text-slate-500">
@@ -83,14 +83,6 @@ export function ConfirmDetails() {
 export function MoreDetails() {
   const { t, user, update, go } = useApp();
   const s = t.s7;
-  const relations = [
-    { key: 'Spouse', label: s.relations.spouse },
-    { key: 'Son', label: s.relations.son },
-    { key: 'Daughter', label: s.relations.daughter },
-    { key: 'Father', label: s.relations.father },
-    { key: 'Mother', label: s.relations.mother },
-    { key: 'Other', label: s.relations.other },
-  ];
   const occupations = [
     { key: 'Salaried', label: s.occupations.salaried },
     { key: 'Self-employed', label: s.occupations.selfEmployed },
@@ -107,7 +99,7 @@ export function MoreDetails() {
   ];
   // A child has no occupation or income to declare; the guardian operates the account.
   const minor = isMinor(user);
-  const ok = !!(user.nomineeRelation && user.nomineeName.trim().length > 1 && user.nomineeDob && (minor || (user.occupation && user.yearlyIncome)));
+  const ok = !!(user.nomineeName.trim().length > 1 && user.nomineeDob && (minor || (user.occupation && user.yearlyIncome)));
   const chip = (on: boolean, h = 'h-12') =>
     `${h} rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-2 border transition-all cursor-pointer ${on ? 'bg-blue-600 text-white border-blue-600 shadow-xs' : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:bg-blue-50/40'}`;
   const input = 'w-full h-12 px-4 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 font-bold text-slate-900 text-sm outline-hidden select-text';
@@ -131,20 +123,6 @@ export function MoreDetails() {
             <div>
               <h2 className="text-base font-bold text-slate-900">{s.nomineeTitle}</h2>
               <p className="text-xs text-slate-500">{s.nomineeSub}</p>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide mb-2.5">{s.relationship}</label>
-            <div className="grid grid-cols-3 gap-2">
-              {relations.map((r) => {
-                const on = user.nomineeRelation === r.key;
-                return (
-                  <button key={r.key} type="button" onClick={() => { b.playTap(); update({ nomineeRelation: r.key }); }} className={chip(on, 'h-11').replace('text-xs sm:text-sm', 'text-xs')}>
-                    {on && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                    <span>{r.label}</span>
-                  </button>
-                );
-              })}
             </div>
           </div>
           <div>
@@ -241,7 +219,7 @@ export function ReviewAgree() {
               row(o.nameLabel, user.fullName)
             )}
             {row(o.branchLabel, o.branchVal)}
-            {row(o.nomineeLabel, `${user.nomineeName} (${user.nomineeRelation})`)}
+            {row(o.nomineeLabel, user.nomineeName)}
             {row(o.alertsOn, user.mobile, true)}
           </div>
           <div className="pt-2">

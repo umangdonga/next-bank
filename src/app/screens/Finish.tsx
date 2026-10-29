@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { ArrowDown, BookOpen, Check, CircleAlert, CircleQuestionMark, Clock, CreditCard, Globe, House, Lock, PenTool, Printer, RotateCcw, ShieldCheck, Smartphone, Sparkles, Users, X } from 'lucide-react';
 import { b } from '../../lib/sound';
+import { enrollCustomer } from '../../lib/api';
 import { useApp } from '../ctx';
 import { Footer, HoldToView, Page, PrivacyBadge, SignaturePad, Title, btnPrimary, btnPrimaryDisabled, btnSoft, useCountdown } from '../ui';
 import { holderName, isMinor, makeAccountNumber, rupees } from '../state';
@@ -31,9 +32,9 @@ export function Signature() {
           <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-5 shadow-2xs space-y-3">
             <div className="flex items-center gap-2.5 text-emerald-800 font-bold text-sm">
               <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
-              <span>{t.x.face.verifiedTitle}</span>
+              <span>{t.x.finger.verifiedTitle}</span>
             </div>
-            <p className="text-xs text-emerald-700 leading-relaxed font-medium">{t.x.face.verifiedSub}</p>
+            <p className="text-xs text-emerald-700 leading-relaxed font-medium">{t.x.finger.verifiedSub}</p>
             <div className="pt-2 flex items-center gap-3 bg-white/80 p-3 rounded-xl border border-emerald-100">
               <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-sm">✓</div>
               <div>
@@ -69,7 +70,21 @@ export function BankVerifying() {
   const [ref] = useState(() => user.referenceNumber || `VK-${Math.floor(100000 + Math.random() * 900000)}`);
   const done = () => {
     b.playSuccess();
-    update({ referenceNumber: ref, accountNumber: user.accountNumber || makeAccountNumber(), ifsc: 'NEXT0000404' });
+    const accountNumber = user.accountNumber || makeAccountNumber();
+    const ifsc = 'NEXT0000404';
+    update({ referenceNumber: ref, accountNumber, ifsc });
+    // The verified fingerprint now opens this account from the home screen.
+    void enrollCustomer({
+      id: `CUST-${accountNumber.replace(/\s/g, '')}`,
+      name: holderName(user),
+      accountType: user.accountType,
+      accountNumber,
+      ifsc,
+      mobile: user.mobile,
+      aadhaarLast4: user.aadhaarNumber.slice(-4),
+      balance: user.deposit?.amount ?? 0,
+      txns: user.deposit ? [{ at: Date.now(), kind: 'credit', amount: user.deposit.amount, note: t.x.home.deposit }] : [],
+    });
     go('11-account-ready');
   };
   useEffect(() => {
@@ -308,23 +323,25 @@ export function AllSet() {
 
 /* ================================================================ E5 */
 
-export function SessionCleared() {
+/** Also shown when an existing customer signs out (or their session times out). */
+export function SessionCleared({ signedOut = false }: { signedOut?: boolean }) {
   const { t, go, help, speed } = useApp();
   const r = t.e5;
+  const out = t.x.bank.out;
   const left = useCountdown(10, () => go('00-home'), speed);
   return (
     <div className="flex-1 flex flex-col justify-between bg-slate-50 overflow-y-auto">
       <div className="max-w-6xl w-full mx-auto p-6 md:p-8 space-y-6">
-        <Title badge={<Check className="w-7 h-7 stroke-[3]" />} tone="green" title={r.title} sub={r.sub} />
+        <Title badge={<Check className="w-7 h-7 stroke-[3]" />} tone="green" title={signedOut ? out.title : r.title} sub={signedOut ? out.sub : r.sub} />
         <div className="max-w-2xl mx-auto w-full bg-white rounded-3xl p-8 sm:p-10 border border-slate-200/90 shadow-sm space-y-6 my-4">
           <ul className="space-y-5">
             <li className="flex items-start gap-3.5">
               <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 mt-0.5"><Check className="w-4 h-4 stroke-[3]" /></div>
-              <span className="text-sm sm:text-base font-bold text-slate-800">{r.item1}</span>
+              <span className="text-sm sm:text-base font-bold text-slate-800">{signedOut ? out.item1 : r.item1}</span>
             </li>
             <li className="flex items-start gap-3.5">
               <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 mt-0.5"><Clock className="w-4 h-4" /></div>
-              <span className="text-xs sm:text-sm font-medium text-slate-600 leading-relaxed">{t.x.cleared.notFinished}</span>
+              <span className="text-xs sm:text-sm font-medium text-slate-600 leading-relaxed">{signedOut ? out.item2 : t.x.cleared.notFinished}</span>
             </li>
             <li className="flex items-start gap-3.5">
               <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center shrink-0 mt-0.5"><House className="w-4 h-4" /></div>

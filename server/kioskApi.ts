@@ -6,12 +6,16 @@
  *    the kiosk browser (localStorage would leak to the next visitor).
  *  - "Scan with my phone" needs a place where the phone and the kiosk can both see
  *    that a document arrived, so the kiosk never has to display it.
+ *  - Existing customers sign in with a fingerprint; their account lives here, and an
+ *    account opened at the kiosk is enrolled so the same finger opens it next visit.
  *
  * Data lives only in this Node process and disappears when the server stops.
  */
 import type { Plugin, Connect } from 'vite';
 import os from 'node:os';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Customer } from '../src/app/state';
+import { demoCustomer } from '../src/lib/demoCustomer';
 
 type Draft = { data: unknown; savedAt: number; expiresAt: number };
 type Phone = { sid: string; createdAt: number; updatedAt: number; data: Record<string, unknown> };
@@ -19,6 +23,13 @@ type Phone = { sid: string; createdAt: number; updatedAt: number; data: Record<s
 const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000;
 const drafts = new Map<string, Draft>();
 const phones = new Map<string, Phone>();
+const seed = demoCustomer();
+const customers = new Map<string, Customer>([[seed.id, seed]]);
+/**
+ * The demo reader cannot tell fingers apart, so a scan "matches" whoever enrolled last:
+ * open an account, come back, and your own finger opens it.
+ */
+let lastEnrolled = seed.id;
 
 function makeCode(): string {
   // Easy to read aloud and type on a keypad: VK- + 6 digits.
@@ -115,6 +126,28 @@ function handler(port: () => number | undefined): Connect.NextHandleFunction {
       if (method === 'DELETE') {
         phones.delete(sid);
         return send(res, 200, { ok: true });
+      }
+    }
+
+    if (parts[1] === 'customers') {
+      const id = parts[2];
+      if (id === 'match' && method === 'POST') {
+        const c = customers.get(lastEnrolled);
+        return c ? send(res, 200, c) : send(res, 404, { error: 'not_found' });
+      }
+      if (!id && method === 'POST') {
+        // Enrol a newly opened account.
+        const c = (await readBody(req)) as Customer;
+        if (!c?.id || !c.accountNumber) return send(res, 400, { error: 'bad_customer' });
+        customers.set(c.id, c);
+        lastEnrolled = c.id;
+        return send(res, 200, c);
+      }
+      if (id && method === 'PUT') {
+        if (!customers.has(id)) return send(res, 404, { error: 'not_found' });
+        const c = { ...((await readBody(req)) as Customer), id };
+        customers.set(id, c);
+        return send(res, 200, c);
       }
     }
 

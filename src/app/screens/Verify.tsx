@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Camera, Check, CircleAlert, Clock, CreditCard, Eye, FingerprintPattern, Glasses, Lock, Printer, RotateCw, Scan, ScanFace, ScanLine, ShieldCheck, Smartphone, User, Users, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Check, CircleAlert, Clock, CreditCard, Droplets, Eye, FingerprintPattern, Hand, House, Lock, Printer, RotateCw, Scan, ScanLine, ShieldCheck, Smartphone, Timer, Users, X } from 'lucide-react';
 import { b } from '../../lib/sound';
 import { useApp } from '../ctx';
 import { Footer, FingerprintSensor, Keypad, MinorBanner, Modal, Page, PrivacyBadge, Title, btnPrimary, btnPrimaryDisabled, useDigits, useDocInfo } from '../ui';
@@ -328,7 +328,7 @@ export function Checking() {
   const [l, setL] = useState(false);
   const finish = () => {
     update({ ...ekycFor(user), aadhaarNumber: user.aadhaarNumber || '432187657714' });
-    go('05b-face');
+    go('05b-fingerprint');
   };
   useEffect(() => {
     const t1 = window.setTimeout(() => { setA(true); b.playTap(); }, 1200 / speed);
@@ -387,73 +387,55 @@ export function Checking() {
 
 /* ================================================================ 05b */
 
-type FacePhase = 'intro' | 'scan' | 'matching' | 'done';
+type FingerPhase = 'intro' | 'scan' | 'matching' | 'done';
 
 /**
- * NEW: live face match against the Aadhaar photo from eKYC. Uses the kiosk camera
- * when there is one (demo mode otherwise). Nothing is recorded or kept: the camera
- * stops as soon as the check is over.
+ * NEW: fingerprint match against the Aadhaar biometrics from eKYC (replaces the
+ * camera face check). The scan goes to UIDAI for matching; nothing is kept on the
+ * kiosk. The same finger opens the account from the home screen next visit.
  */
-export function FaceCheck() {
+export function FingerprintCheck() {
   const { t, update, go, speed } = useApp();
-  const f = t.x.face;
-  const [phase, setPhase] = useState<FacePhase>('intro');
-  const [prompt, setPrompt] = useState(0);
-  const [noCamera, setNoCamera] = useState(false);
-  const video = useRef<HTMLVideoElement>(null);
+  const f = t.x.finger;
+  const [phase, setPhase] = useState<FingerPhase>('intro');
+  const [captured, setCaptured] = useState(0);
   const live = phase === 'scan' || phase === 'matching';
-
-  useEffect(() => {
-    if (!live) return;
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setNoCamera(true);
-      return;
-    }
-    let stream: MediaStream | null = null;
-    let stopped = false;
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: 'user', width: 640, height: 480 }, audio: false })
-      .then((s) => {
-        if (stopped) return s.getTracks().forEach((tr) => tr.stop());
-        stream = s;
-        if (video.current) video.current.srcObject = s;
-      })
-      .catch(() => setNoCamera(true));
-    return () => {
-      stopped = true;
-      stream?.getTracks().forEach((tr) => tr.stop());
-    };
-  }, [live]);
+  const prompt = captured < 35 ? 0 : captured < 75 ? 1 : 2;
 
   useEffect(() => {
     if (phase !== 'scan') return;
-    const ids = [
-      window.setTimeout(() => { setPrompt(1); b.playTap(); }, 1800 / speed),
-      window.setTimeout(() => { setPrompt(2); b.playTap(); }, 3600 / speed),
-      window.setTimeout(() => { setPhase('matching'); b.playBeep(); }, 5000 / speed),
-    ];
-    return () => ids.forEach(window.clearTimeout);
+    const id = window.setInterval(() => {
+      setCaptured((c) => {
+        const n = Math.min(100, c + 4);
+        if (n >= 100) {
+          window.clearInterval(id);
+          window.setTimeout(() => { b.playBeep(); setPhase('matching'); }, 0);
+        }
+        return n;
+      });
+    }, 180 / speed);
+    return () => window.clearInterval(id);
   }, [phase, speed]);
 
   useEffect(() => {
     if (phase !== 'matching') return;
     const id = window.setTimeout(() => {
       b.playSuccess();
-      update({ faceVerified: true });
+      update({ fingerprintVerified: true });
       setPhase('done');
     }, 2000 / speed);
     return () => window.clearTimeout(id);
   }, [phase, speed, update]);
 
   const start = () => {
+    if (phase !== 'intro') return;
     b.playTap();
-    setPrompt(0);
-    setNoCamera(false);
+    setCaptured(0);
     setPhase('scan');
   };
 
-  const ring = phase === 'done' ? 'border-emerald-500' : phase === 'matching' ? 'border-blue-500 animate-pulse' : phase === 'scan' ? 'border-cyan-400' : 'border-slate-300 border-dashed';
-  const tipIcons = [Glasses, Eye, ScanFace];
+  const frame = phase === 'done' ? 'border-emerald-500 bg-emerald-600' : phase === 'matching' ? 'border-blue-500 animate-pulse bg-slate-950' : phase === 'scan' ? 'border-cyan-400 bg-slate-950' : 'border-slate-500 border-dashed bg-slate-800 hover:border-blue-400';
+  const tipIcons = [Droplets, Hand, Timer];
 
   return (
     <Page
@@ -465,7 +447,7 @@ export function FaceCheck() {
             </button>
           ) : (
             <button disabled={phase !== 'intro'} onClick={start} className={phase === 'intro' ? btnPrimary : btnPrimaryDisabled}>
-              <Camera className="w-4 h-4" /> <span>{f.start}</span>
+              <FingerprintPattern className="w-4 h-4" /> <span>{f.start}</span>
             </button>
           )}
         </Footer>
@@ -476,22 +458,33 @@ export function FaceCheck() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
         <div className="lg:col-span-7 relative bg-slate-900 rounded-3xl p-6 flex flex-col items-center justify-center gap-5 min-h-[22rem] overflow-hidden shadow-md">
           {live && (
-            <span className="absolute top-4 left-4 flex items-center gap-1.5 text-[11px] font-bold text-white bg-red-600/90 px-2.5 py-1 rounded-full">
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> {noCamera ? f.noCamera : f.cameraOn}
+            <span className="absolute top-4 left-4 flex items-center gap-1.5 text-[11px] font-bold text-white bg-cyan-600/90 px-2.5 py-1 rounded-full">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse" /> {f.readerOn}
             </span>
           )}
-          <div className={`relative w-60 h-60 sm:w-64 sm:h-64 rounded-full border-4 overflow-hidden bg-slate-800 flex items-center justify-center transition-colors ${ring}`}>
-            {live && !noCamera && <video ref={video} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-cover -scale-x-100" />}
-            {(!live || noCamera) && phase !== 'done' && <User className={`w-32 h-32 ${live ? 'text-slate-500 animate-pulse' : 'text-slate-600'}`} />}
-            {phase === 'done' && (
-              <div className="absolute inset-0 bg-emerald-600 flex items-center justify-center animate-fade-in">
-                <Check className="w-28 h-28 text-white stroke-[3] animate-scale-in" />
-              </div>
+          <button
+            type="button"
+            onClick={start}
+            aria-label={f.start}
+            className={`relative w-52 h-60 sm:w-56 sm:h-64 rounded-[2.5rem] border-4 overflow-hidden flex items-center justify-center transition-colors select-none ${frame} ${phase === 'intro' ? 'cursor-pointer active:scale-95' : 'cursor-default'}`}
+          >
+            {phase === 'done' ? (
+              <Check className="w-28 h-28 text-white stroke-[3] animate-scale-in" />
+            ) : (
+              <>
+                <FingerprintPattern className="w-36 h-36 text-slate-600" />
+                <FingerprintPattern className="absolute w-36 h-36 text-cyan-300 transition-[clip-path] duration-200" style={{ clipPath: `inset(${100 - captured}% 0 0 0)` }} />
+              </>
             )}
             {phase === 'scan' && <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-cyan-400 via-white to-cyan-400 shadow-[0_0_15px_#38bdf8] animate-bounce top-1/3" />}
-          </div>
+          </button>
+          {phase === 'scan' && (
+            <div className="w-full max-w-xs bg-slate-700 h-2 rounded-full overflow-hidden">
+              <div className="bg-cyan-400 h-full rounded-full transition-all duration-200" style={{ width: `${captured}%` }} />
+            </div>
+          )}
           <div className="text-center min-h-14">
-            {phase === 'intro' && <p className="text-base font-semibold text-slate-300">{f.tips[2]}</p>}
+            {phase === 'intro' && <p className="text-base font-semibold text-slate-300">{f.prompts[0]}</p>}
             {phase === 'scan' && <p className="text-xl sm:text-2xl font-extrabold text-white">{f.prompts[prompt]}</p>}
             {phase === 'matching' && (
               <p className="flex items-center justify-center gap-2 text-lg font-bold text-blue-200">
@@ -523,6 +516,10 @@ export function FaceCheck() {
           <div className="bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 flex items-start gap-3">
             <Lock className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <p className="text-xs sm:text-sm text-emerald-800 font-medium leading-relaxed">{f.privacy}</p>
+          </div>
+          <div className="bg-blue-50/60 border border-blue-200 rounded-2xl p-4 flex items-start gap-3">
+            <House className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+            <p className="text-xs sm:text-sm text-blue-800 font-medium leading-relaxed">{f.nextTime}</p>
           </div>
         </div>
       </div>

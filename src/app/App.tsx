@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Clock, Hourglass, House, Lock, Settings2, Trash2, UserRoundX, X, Check } from 'lucide-react';
 import { y, type Lang } from '../i18n';
 import { b } from '../lib/sound';
+import { saveCustomer } from '../lib/api';
 import { Ctx, type AppCtx } from './ctx';
 import { FingerprintSensor, Header, Keypad, useDigits } from './ui';
-import { DEPOSIT, emptyUser, hasProgress, isMinor, isVerified, rupees, IDLE_LIMIT, PREWARN_SECONDS, SHIELD_SECONDS, type Screen, type UserData } from './state';
+import { DEPOSIT, emptyUser, hasProgress, isBankingScreen, isMinor, isVerified, rupees, IDLE_LIMIT, PREWARN_SECONDS, SHIELD_SECONDS, type Customer, type Screen, type UserData } from './state';
 import { AccountHome } from './screens/Home';
+import { BankDeposit, BankingHome, ChequeBook, CreditCardApply, MiniStatement, Withdraw } from './screens/Banking';
 import { BeforeStart, DocsMissing, Resume, ReturnPass } from './screens/Start';
-import { Aadhaar, Checking, FaceCheck, Otp, OtpProblem, ScanCards, ScannerError } from './screens/Verify';
+import { Aadhaar, Checking, FingerprintCheck, Otp, OtpProblem, ScanCards, ScannerError } from './screens/Verify';
 import { ConfirmDetails, MoreDetails, ReviewAgree, Services } from './screens/Details';
 import { ChildDetails } from './screens/Minor';
 import { Deposit } from './screens/Deposit';
@@ -43,7 +45,7 @@ export function App() {
   screenRef.current = screen;
   /** Last step of the application, so "Continue my application" on Home goes back there. */
   const lastStep = useRef<Screen | null>(null);
-  if (!['00-home', 'E5-session-cleared', 'E6-help-coming', 'E7-return-pass', 'E9-resume'].includes(screen)) lastStep.current = screen;
+  if (!['00-home', 'E5-session-cleared', 'E6-help-coming', 'E7-return-pass', 'E9-resume'].includes(screen) && !isBankingScreen(screen)) lastStep.current = screen;
 
   const update = useCallback((p: Partial<UserData>) => setUser((u) => ({ ...u, ...p })), []);
   const go = useCallback((s: Screen) => {
@@ -65,10 +67,13 @@ export function App() {
 
   const clearAll = useCallback(() => wipe('E5-session-cleared'), [wipe]);
 
+  const signOut = useCallback(() => wipe('C9-signed-out'), [wipe]);
+
   const home = useCallback(() => {
-    if (hasProgress(userRef.current)) setLeaveOpen(true);
+    if (userRef.current.customer) signOut();
+    else if (hasProgress(userRef.current)) setLeaveOpen(true);
     else wipe('00-home');
-  }, [wipe]);
+  }, [wipe, signOut]);
 
   const help = useCallback(() => {
     setReturnTo(screenRef.current);
@@ -83,9 +88,16 @@ export function App() {
     setScreen(s);
   }, []);
 
+  const signIn = useCallback((c: Customer) => restore({ ...emptyUser(), customer: c }, 'C1-banking'), [restore]);
+
+  const updateCustomer = useCallback((c: Customer) => {
+    setUser((u) => ({ ...u, customer: c }));
+    void saveCustomer(c);
+  }, []);
+
   const ctx: AppCtx = useMemo(
-    () => ({ lang, t, screen, user, update, go, help, home, clearAll, continueApp, restore, moreTime, setMoreTime, speed }),
-    [lang, t, screen, user, update, go, help, home, clearAll, continueApp, restore, moreTime, speed],
+    () => ({ lang, t, screen, user, update, go, help, home, clearAll, continueApp, restore, signIn, signOut, updateCustomer, moreTime, setMoreTime, speed }),
+    [lang, t, screen, user, update, go, help, home, clearAll, continueApp, restore, signIn, signOut, updateCustomer, moreTime, speed],
   );
 
   const narration = (): string => {
@@ -97,7 +109,7 @@ export function App() {
       case '03-otp': return `${t.s3.title}. ${t.s3.sub}`;
       case '04-scan-cards': return `${t.s4.title}. ${t.s4.sub}. ${t.s4.instruction1}`;
       case '05-checking': return `${t.s5.title}. ${t.s5.sub}`;
-      case '05b-face': return `${t.x.face.title}. ${t.x.face.sub} ${t.x.face.tips.join('. ')}.`;
+      case '05b-fingerprint': return `${t.x.finger.title}. ${t.x.finger.sub} ${t.x.finger.tips.join('. ')}.`;
       case '06-confirm-details': return `${isMinor(user) ? t.x.minor.confirmTitle : t.s6.title}. ${t.s6.sub}. ${user.fullName}.`;
       case '06m-child': return `${t.x.minor.childTitle}. ${t.x.minor.childSub}`;
       case '07-more-details': return `${t.s7.title}. ${t.s7.sub}`;
@@ -112,6 +124,13 @@ export function App() {
       case 'E1-docs-missing': return `${t.x.missing.title} ${t.x.missing.sub}`;
       case 'E7-return-pass': return `${t.x.returnPass.title}. ${t.x.returnPass.sub}`;
       case 'E9-resume': return `${t.x.resume.title}. ${t.x.resume.sub}`;
+      case 'C1-banking': return `${t.x.bank.welcome(user.customer?.name ?? '')}. ${t.x.bank.sub} ${Object.values(t.x.bank.services).map((s) => s.title).join('. ')}.`;
+      case 'C2-deposit': return `${t.x.bank.deposit.title}. ${t.x.bank.deposit.sub} ${t.x.deposit.choose}`;
+      case 'C3-withdraw': return `${t.x.bank.withdraw.title}. ${t.x.bank.withdraw.sub}`;
+      case 'C4-credit-card': return `${t.x.bank.credit.title}. ${t.x.bank.credit.sub}`;
+      case 'C5-statement': return `${t.x.bank.statement.title}. ${t.x.bank.statement.sub}`;
+      case 'C6-cheque-book': return `${t.x.bank.cheque.title}. ${t.x.bank.cheque.sub}`;
+      case 'C9-signed-out': return `${t.x.bank.out.title}. ${t.x.bank.out.sub}`;
       default: return `${t.appName}.`;
     }
   };
@@ -124,7 +143,7 @@ export function App() {
     case '03-otp': body = <Otp />; break;
     case '04-scan-cards': body = <ScanCards />; break;
     case '05-checking': body = <Checking />; break;
-    case '05b-face': body = <FaceCheck />; break;
+    case '05b-fingerprint': body = <FingerprintCheck />; break;
     case '06-confirm-details': body = <ConfirmDetails />; break;
     case '06m-child': body = <ChildDetails />; break;
     case '07-more-details': body = <MoreDetails />; break;
@@ -143,7 +162,16 @@ export function App() {
     case 'E6-help-coming': body = <HelpComing onBack={() => setScreen(returnTo)} />; break;
     case 'E7-return-pass': body = <ReturnPass />; break;
     case 'E9-resume': body = <Resume />; break;
+    case 'C1-banking': body = <BankingHome />; break;
+    case 'C2-deposit': body = <BankDeposit />; break;
+    case 'C3-withdraw': body = <Withdraw />; break;
+    case 'C4-credit-card': body = <CreditCardApply />; break;
+    case 'C5-statement': body = <MiniStatement />; break;
+    case 'C6-cheque-book': body = <ChequeBook />; break;
+    case 'C9-signed-out': body = <SessionCleared signedOut />; break;
   }
+  // A banking screen without a signed-in customer (e.g. after a wipe) falls back to Home.
+  if (isBankingScreen(screen) && screen !== 'C9-signed-out' && !user.customer) body = <AccountHome />;
 
   return (
     <Ctx.Provider value={ctx}>
@@ -168,7 +196,7 @@ export function App() {
         <main className="flex-1 flex flex-col overflow-hidden relative" key={`${sessionKey}-${screen}`}>
           {body}
         </main>
-        <PrivacyLayer screen={screen} user={user} sessionKey={sessionKey} speed={speed} moreTime={moreTime} setMoreTime={setMoreTime} onExpire={clearAll} fast={fast} setFast={setFast} />
+        <PrivacyLayer screen={screen} user={user} sessionKey={sessionKey} speed={speed} moreTime={moreTime} setMoreTime={setMoreTime} onExpire={user.customer ? signOut : clearAll} fast={fast} setFast={setFast} />
         {leaveOpen && (
           <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl p-8 max-w-2xl w-full space-y-6 shadow-2xl border border-slate-100 animate-scale-in">
@@ -295,7 +323,7 @@ function PrivacyLayer({
       {shieldAt !== null && (
         <Shield
           left={left}
-          ownerDigits={isVerified(user) && user.aadhaarNumber.length === 12 ? user.aadhaarNumber.slice(-4) : null}
+          ownerDigits={user.customer ? user.customer.aadhaarLast4 : isVerified(user) && user.aadhaarNumber.length === 12 ? user.aadhaarNumber.slice(-4) : null}
           onUnlock={unlock}
           onClear={clearNow}
           moreTime={moreTime}

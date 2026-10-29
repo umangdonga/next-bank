@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { Dict, Lang } from '../i18n';
-import type { Screen, UserData } from './state';
+import type { Customer, Screen, UserData } from './state';
 
 export interface AppCtx {
   lang: Lang;
@@ -19,6 +19,12 @@ export interface AppCtx {
   continueApp(): void;
   /** Load a saved application (from a QR return slip) and continue at its screen. */
   restore(u: UserData, s: Screen): void;
+  /** Existing customer matched by fingerprint: open their banking screen. */
+  signIn(c: Customer): void;
+  /** Wipe the signed-in customer and show "You are signed out". */
+  signOut(): void;
+  /** Change the signed-in customer's account here and on the bank server. */
+  updateCustomer(c: Customer): void;
   moreTime: boolean;
   setMoreTime(v: boolean): void;
   speed: number;

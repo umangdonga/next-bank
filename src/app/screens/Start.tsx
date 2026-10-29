@@ -47,7 +47,7 @@ export function BeforeStart() {
   const minor = user.accountType === 'minor';
   const steps = minor
     ? [t.x.minor.guardianBanner, t.x.minor.childBanner, `${t.x.minor.docTitle}: ${t.x.minor.docTypes.birth}`, i.step3, h.stepDeposit(rupees(DEPOSIT.minor)), i.step4, i.step5]
-    : [i.step1, i.step2, h.stepFace, i.step3, h.stepDeposit(rupees(DEPOSIT[user.accountType])), i.step4, i.step5];
+    : [i.step1, i.step2, h.stepFinger, i.step3, h.stepDeposit(rupees(DEPOSIT[user.accountType])), i.step4, i.step5];
 
   return (
     <Page
